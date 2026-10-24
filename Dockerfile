@@ -16,13 +16,16 @@ WORKDIR /app
 # Copy uv binary directly from official image
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Install python dependencies using uv frozen lock
+# Install python dependencies first (cached layer)
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-cache --no-dev
+RUN uv sync --no-install-project --frozen --no-cache --no-dev
 
 # Copy application source
 COPY src/ src/
 COPY ruff.toml .
+
+# Sync the root project into venv
+RUN uv sync --frozen --no-cache --no-dev
 
 ENV PATH="/app/.venv/bin:$PATH"
 ENV DATABASE_URL="sqlite+aiosqlite:////data/verifact.db"
