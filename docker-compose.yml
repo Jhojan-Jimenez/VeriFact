@@ -1,20 +1,18 @@
 services:
   verifact-api:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: verifact:latest
     container_name: verifact-api
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "5020:8000"
+    networks:
+      - coolify
     environment:
       - DATABASE_URL=sqlite+aiosqlite:////data/verifact.db
       - RECEIPT_TIME_TOLERANCE_MINUTES=30
       - DEBUG=false
     volumes:
       - verifact_data:/data
-    # Resource constraints aligned with OCI ARM64 VM capacity
     deploy:
       resources:
         limits:
@@ -24,11 +22,25 @@ services:
           memory: 128M
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.verifact.rule=Host(`verifact.jhojan.cloud`)"
-      - "traefik.http.routers.verifact.entrypoints=https"
-      - "traefik.http.routers.verifact.tls=true"
-      - "traefik.http.routers.verifact.tls.certresolver=letsencrypt"
-      - "traefik.http.services.verifact.loadbalancer.server.port=8000"
+      - "traefik.docker.network=coolify"
+      - "traefik.http.middlewares.gzip.compress=true"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.http-0-verifact.entryPoints=http"
+      - "traefik.http.routers.http-0-verifact.middlewares=redirect-to-https"
+      - "traefik.http.routers.http-0-verifact.rule=Host(`verifact.jhojan.cloud`) && PathPrefix(`/`)"
+      - "traefik.http.routers.http-0-verifact.service=http-0-verifact"
+      - "traefik.http.routers.https-0-verifact.entryPoints=https"
+      - "traefik.http.routers.https-0-verifact.middlewares=gzip"
+      - "traefik.http.routers.https-0-verifact.rule=Host(`verifact.jhojan.cloud`) && PathPrefix(`/`)"
+      - "traefik.http.routers.https-0-verifact.service=https-0-verifact"
+      - "traefik.http.routers.https-0-verifact.tls=true"
+      - "traefik.http.routers.https-0-verifact.tls.certresolver=letsencrypt"
+      - "traefik.http.services.http-0-verifact.loadbalancer.server.port=8000"
+      - "traefik.http.services.https-0-verifact.loadbalancer.server.port=8000"
+
+networks:
+  coolify:
+    external: true
 
 volumes:
   verifact_data:
