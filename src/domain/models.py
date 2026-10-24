@@ -31,6 +31,7 @@ class ReceiptVerificationStatus(str, Enum):
     DUPLICATE = "DUPLICATE"
     FLAGGED_FRAUD = "FLAGGED_FRAUD"
     UNCONFIRMED = "UNCONFIRMED"
+    SIMULATED = "SIMULATED"
 
 
 class StockMovementType(str, Enum):
@@ -88,7 +89,7 @@ class PaymentReceipt(SQLModel, table=True):
     reference_number: str = Field(index=True)
     extracted_amount: int = Field(ge=0, description="Amount in COP")
     receipt_timestamp: datetime = Field(default_factory=utc_now)
-    image_sha256: str = Field(unique=True, index=True)
+    image_sha256: str = Field(index=True)
     verification_status: ReceiptVerificationStatus = Field(default=ReceiptVerificationStatus.UNCONFIRMED, index=True)
     raw_extracted_text: str = Field(default="")
     failure_reason: str | None = Field(default=None, nullable=True)

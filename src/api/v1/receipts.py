@@ -6,7 +6,7 @@ from sqlmodel import select
 
 from src.api.schemas.receipt import ReceiptInspectionResponse, ReceiptVerificationResponse
 from src.core.database import get_session
-from src.domain.models import PaymentReceipt, ReceiptVerificationStatus
+from src.domain.models import PaymentReceipt, ReceiptVerificationStatus, utc_now
 from src.services.verification_service import VerificationService
 from src.services.vision_service import VisionService
 
@@ -19,7 +19,7 @@ async def inspect_receipt(
     file: UploadFile = File(..., description="Receipt image file to inspect without requiring an order"),
     session: AsyncSession = Depends(get_session),
 ):
-    """Simulate and inspect a receipt: extract financial details without order dependency."""
+    """Simulate and inspect a receipt: extract financial details and persist in audit history."""
     contents = await file.read()
     if not contents or len(contents) < 50:
         raise HTTPException(
@@ -30,27 +30,76 @@ async def inspect_receipt(
     # 1. Run Vision OCR extraction
     extracted_data, image_sha256 = vision_service.process_receipt(contents)
 
-    # 2. Check duplicate status in background without rejecting
-    stmt = select(PaymentReceipt).where(
-        (PaymentReceipt.image_sha256 == image_sha256)
-        | (
-            (PaymentReceipt.bank_platform == extracted_data.bank_platform)
-            & (PaymentReceipt.reference_number == extracted_data.reference_number)
-            & (PaymentReceipt.verification_status == ReceiptVerificationStatus.VERIFIED)
-        )
-    )
-    res = await session.execute(stmt)
-    existing = res.scalar_one_or_none()
+    # 2. Check duplicate status against VERIFIED payments
+    stmt_hash = select(PaymentReceipt).where(PaymentReceipt.image_sha256 == image_sha256)
+    res_hash = await session.execute(stmt_hash)
+    existing_by_hash = res_hash.scalar_one_or_none()
 
-    is_duplicate = existing is not None
+    stmt_ref = select(PaymentReceipt).where(
+        PaymentReceipt.bank_platform == extracted_data.bank_platform,
+        PaymentReceipt.reference_number == extracted_data.reference_number,
+        PaymentReceipt.verification_status == ReceiptVerificationStatus.VERIFIED,
+    )
+    res_ref = await session.execute(stmt_ref)
+    existing_by_ref = res_ref.scalar_one_or_none()
+
+    is_duplicate = False
     dup_info = None
-    if existing:
+
+    if existing_by_hash and existing_by_hash.verification_status == ReceiptVerificationStatus.VERIFIED:
+        is_duplicate = True
         dup_info = {
-            "existing_receipt_id": str(existing.id),
-            "existing_order_id": str(existing.order_id) if existing.order_id else None,
-            "bank": existing.bank_platform.value,
-            "reference": existing.reference_number,
+            "existing_receipt_id": str(existing_by_hash.id),
+            "existing_order_id": str(existing_by_hash.order_id) if existing_by_hash.order_id else None,
+            "bank": existing_by_hash.bank_platform.value,
+            "reference": existing_by_hash.reference_number,
+            "reason": "Misma imagen SHA-256 ya fue verificada",
         }
+    elif existing_by_ref:
+        is_duplicate = True
+        dup_info = {
+            "existing_receipt_id": str(existing_by_ref.id),
+            "existing_order_id": str(existing_by_ref.order_id) if existing_by_ref.order_id else None,
+            "bank": existing_by_ref.bank_platform.value,
+            "reference": existing_by_ref.reference_number,
+            "reason": "Misma referencia bancaria ya fue verificada",
+        }
+
+    # 3. Persist simulation in audit history (payment_receipts)
+    sim_status = ReceiptVerificationStatus.DUPLICATE if is_duplicate else ReceiptVerificationStatus.SIMULATED
+    failure_msg = (
+        "Simulación: detectado como duplicado de orden previa"
+        if is_duplicate
+        else "Inspección / Simulación libre (Sin orden asociada)"
+    )
+
+    if existing_by_hash and existing_by_hash.verification_status in (ReceiptVerificationStatus.SIMULATED, ReceiptVerificationStatus.DUPLICATE):
+        # Refresh existing simulated record
+        existing_by_hash.bank_platform = extracted_data.bank_platform
+        existing_by_hash.reference_number = extracted_data.reference_number or "SIN_REFERENCIA"
+        existing_by_hash.extracted_amount = extracted_data.amount_cop
+        existing_by_hash.receipt_timestamp = extracted_data.receipt_timestamp
+        existing_by_hash.verification_status = sim_status
+        existing_by_hash.raw_extracted_text = extracted_data.raw_text[:1000] if extracted_data.raw_text else ""
+        existing_by_hash.failure_reason = failure_msg
+        existing_by_hash.created_at = utc_now()
+        await session.commit()
+    elif not existing_by_hash:
+        # Insert new simulation record
+        sim_receipt = PaymentReceipt(
+            order_id=None,
+            bank_platform=extracted_data.bank_platform,
+            reference_number=extracted_data.reference_number or "SIN_REFERENCIA",
+            extracted_amount=extracted_data.amount_cop,
+            receipt_timestamp=extracted_data.receipt_timestamp,
+            image_sha256=image_sha256,
+            verification_status=sim_status,
+            raw_extracted_text=extracted_data.raw_text[:1000] if extracted_data.raw_text else "",
+            failure_reason=failure_msg,
+            created_at=utc_now(),
+        )
+        session.add(sim_receipt)
+        await session.commit()
 
     return ReceiptInspectionResponse(
         bank_platform=extracted_data.bank_platform,

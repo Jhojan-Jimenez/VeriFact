@@ -37,9 +37,9 @@ class VerificationService:
         res_hash = await session.execute(stmt_hash)
         existing_receipt_hash = res_hash.scalar_one_or_none()
 
-        if existing_receipt_hash:
+        if existing_receipt_hash and existing_receipt_hash.verification_status == ReceiptVerificationStatus.VERIFIED:
             raise DuplicateReceiptError(
-                message="Duplicate image payload: this exact receipt has already been submitted.",
+                message="Duplicate image payload: this exact receipt has already been submitted and verified.",
                 details={
                     "original_receipt_id": str(existing_receipt_hash.id),
                     "original_order_id": str(existing_receipt_hash.order_id),
@@ -79,19 +79,24 @@ class VerificationService:
 
         # 4. Verify Amount Match (Strict integer match in COP)
         if extracted.amount_cop != order.total_amount:
-            # Create failed receipt record for audit
-            failed_receipt = PaymentReceipt(
-                order_id=order.id,
-                bank_platform=extracted.bank_platform,
-                reference_number=extracted.reference_number,
-                extracted_amount=extracted.amount_cop,
-                receipt_timestamp=extracted.receipt_timestamp,
-                image_sha256=image_sha256,
-                verification_status=ReceiptVerificationStatus.REJECTED,
-                raw_extracted_text=extracted.raw_text,
-                failure_reason=f"Amount mismatch: expected {order.total_amount}, extracted {extracted.amount_cop}",
-            )
-            session.add(failed_receipt)
+            failure_reason = f"Amount mismatch: expected {order.total_amount}, extracted {extracted.amount_cop}"
+            if existing_receipt_hash and existing_receipt_hash.verification_status in (ReceiptVerificationStatus.SIMULATED, ReceiptVerificationStatus.UNCONFIRMED):
+                existing_receipt_hash.order_id = order.id
+                existing_receipt_hash.verification_status = ReceiptVerificationStatus.REJECTED
+                existing_receipt_hash.failure_reason = failure_reason
+            else:
+                failed_receipt = PaymentReceipt(
+                    order_id=order.id,
+                    bank_platform=extracted.bank_platform,
+                    reference_number=extracted.reference_number,
+                    extracted_amount=extracted.amount_cop,
+                    receipt_timestamp=extracted.receipt_timestamp,
+                    image_sha256=image_sha256,
+                    verification_status=ReceiptVerificationStatus.REJECTED,
+                    raw_extracted_text=extracted.raw_text,
+                    failure_reason=failure_reason,
+                )
+                session.add(failed_receipt)
             await session.commit()
 
             raise AmountMismatchError(
@@ -104,18 +109,24 @@ class VerificationService:
         now_utc = datetime.now(UTC)
         diff_minutes = abs((now_utc - extracted.receipt_timestamp).total_seconds()) / 60
         if diff_minutes > settings.RECEIPT_TIME_TOLERANCE_MINUTES:
-            failed_receipt = PaymentReceipt(
-                order_id=order.id,
-                bank_platform=extracted.bank_platform,
-                reference_number=extracted.reference_number,
-                extracted_amount=extracted.amount_cop,
-                receipt_timestamp=extracted.receipt_timestamp,
-                image_sha256=image_sha256,
-                verification_status=ReceiptVerificationStatus.REJECTED,
-                raw_extracted_text=extracted.raw_text,
-                failure_reason=f"Receipt timestamp exceeds {settings.RECEIPT_TIME_TOLERANCE_MINUTES}m window",
-            )
-            session.add(failed_receipt)
+            failure_reason = f"Receipt timestamp exceeds {settings.RECEIPT_TIME_TOLERANCE_MINUTES}m window"
+            if existing_receipt_hash and existing_receipt_hash.verification_status in (ReceiptVerificationStatus.SIMULATED, ReceiptVerificationStatus.UNCONFIRMED):
+                existing_receipt_hash.order_id = order.id
+                existing_receipt_hash.verification_status = ReceiptVerificationStatus.REJECTED
+                existing_receipt_hash.failure_reason = failure_reason
+            else:
+                failed_receipt = PaymentReceipt(
+                    order_id=order.id,
+                    bank_platform=extracted.bank_platform,
+                    reference_number=extracted.reference_number,
+                    extracted_amount=extracted.amount_cop,
+                    receipt_timestamp=extracted.receipt_timestamp,
+                    image_sha256=image_sha256,
+                    verification_status=ReceiptVerificationStatus.REJECTED,
+                    raw_extracted_text=extracted.raw_text,
+                    failure_reason=failure_reason,
+                )
+                session.add(failed_receipt)
             await session.commit()
 
             raise ExpiredReceiptError(
@@ -123,17 +134,28 @@ class VerificationService:
             )
 
         # 6. Settle Order & Deduct Inventory (Atomic Transaction)
-        receipt = PaymentReceipt(
-            order_id=order.id,
-            bank_platform=extracted.bank_platform,
-            reference_number=extracted.reference_number,
-            extracted_amount=extracted.amount_cop,
-            receipt_timestamp=extracted.receipt_timestamp,
-            image_sha256=image_sha256,
-            verification_status=ReceiptVerificationStatus.VERIFIED,
-            raw_extracted_text=extracted.raw_text,
-        )
-        session.add(receipt)
+        if existing_receipt_hash and existing_receipt_hash.verification_status in (ReceiptVerificationStatus.SIMULATED, ReceiptVerificationStatus.UNCONFIRMED):
+            existing_receipt_hash.order_id = order.id
+            existing_receipt_hash.bank_platform = extracted.bank_platform
+            existing_receipt_hash.reference_number = extracted.reference_number
+            existing_receipt_hash.extracted_amount = extracted.amount_cop
+            existing_receipt_hash.receipt_timestamp = extracted.receipt_timestamp
+            existing_receipt_hash.verification_status = ReceiptVerificationStatus.VERIFIED
+            existing_receipt_hash.raw_extracted_text = extracted.raw_text
+            existing_receipt_hash.failure_reason = None
+            receipt = existing_receipt_hash
+        else:
+            receipt = PaymentReceipt(
+                order_id=order.id,
+                bank_platform=extracted.bank_platform,
+                reference_number=extracted.reference_number,
+                extracted_amount=extracted.amount_cop,
+                receipt_timestamp=extracted.receipt_timestamp,
+                image_sha256=image_sha256,
+                verification_status=ReceiptVerificationStatus.VERIFIED,
+                raw_extracted_text=extracted.raw_text,
+            )
+            session.add(receipt)
 
         # Transition order to PAID
         order.status = OrderStatus.PAID

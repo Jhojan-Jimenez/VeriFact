@@ -60,3 +60,14 @@ async def test_dashboard_static_and_order_endpoints(client: AsyncClient):
         assert inspect_data["bank_platform"] == "NEQUI"
         assert inspect_data["amount_cop"] == 45000
         assert inspect_data["is_duplicate"] is False
+
+    # 6. Verify that the simulation appears in the transaction audit history
+    res_receipts_after = await client.get("/api/v1/receipts")
+    assert res_receipts_after.status_code == 200
+    receipts_list = res_receipts_after.json()
+    assert len(receipts_list) >= 1
+    simulated_entry = next((r for r in receipts_list if r["image_sha256"] == "inspect_hash_123"), None)
+    assert simulated_entry is not None
+    assert simulated_entry["verification_status"] == "SIMULATED"
+    assert simulated_entry["extracted_amount"] == 45000
+    assert simulated_entry["bank_platform"] == "NEQUI"

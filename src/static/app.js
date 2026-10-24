@@ -386,6 +386,10 @@ function renderTransactions(list) {
     let statusBadge = `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-400">${tx.verification_status}</span>`;
     if (tx.verification_status === 'VERIFIED') {
       statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><i data-lucide="check" class="w-3 h-3 mr-1"></i> Verificado</span>`;
+    } else if (tx.verification_status === 'SIMULATED') {
+      statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"><i data-lucide="flask-conical" class="w-3 h-3 mr-1"></i> Simulado</span>`;
+    } else if (tx.verification_status === 'UNCONFIRMED') {
+      statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-500/10 text-slate-400 border border-slate-500/20"><i data-lucide="clock" class="w-3 h-3 mr-1"></i> Sin Confirmar</span>`;
     } else if (tx.verification_status === 'REJECTED') {
       statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-500/10 text-red-400 border border-red-500/20"><i data-lucide="x" class="w-3 h-3 mr-1"></i> Rechazado</span>`;
     } else if (tx.verification_status === 'DUPLICATE') {
@@ -412,8 +416,9 @@ function renderTransactions(list) {
 // Table Filters & Search
 function setFilter(status) {
   currentFilter = status;
-  ['ALL', 'VERIFIED', 'REJECTED'].forEach(s => {
+  ['ALL', 'VERIFIED', 'SIMULATED', 'REJECTED'].forEach(s => {
     const btn = document.getElementById(`filter-${s}`);
+    if (!btn) return;
     if (s === status) {
       btn.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 text-slate-950 transition";
     } else {
