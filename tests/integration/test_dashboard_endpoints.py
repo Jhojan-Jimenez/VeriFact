@@ -1,3 +1,5 @@
+from datetime import UTC
+
 import pytest
 from httpx import AsyncClient
 
@@ -31,3 +33,30 @@ async def test_dashboard_static_and_order_endpoints(client: AsyncClient):
     res_receipts = await client.get("/api/v1/receipts")
     assert res_receipts.status_code == 200
     assert isinstance(res_receipts.json(), list)
+
+    # 5. Test Inspect endpoint without order
+    from datetime import datetime
+    from unittest.mock import patch
+
+    from src.api.schemas.receipt import ExtractedReceiptData
+    from src.domain.models import BankPlatform
+
+    mock_extracted = ExtractedReceiptData(
+        bank_platform=BankPlatform.NEQUI,
+        reference_number="M99881122",
+        amount_cop=45000,
+        receipt_timestamp=datetime.now(UTC),
+        raw_text="Nequi ¡Listo! $45.000",
+    )
+
+    with patch("src.api.v1.receipts.vision_service.process_receipt") as mock_v:
+        mock_v.return_value = (mock_extracted, "inspect_hash_123")
+        res_inspect = await client.post(
+            "/api/v1/receipts/inspect",
+            files={"file": ("receipt.png", b"dummy-receipt-bytes-content-for-inspection" * 3, "image/png")},
+        )
+        assert res_inspect.status_code == 200
+        inspect_data = res_inspect.json()
+        assert inspect_data["bank_platform"] == "NEQUI"
+        assert inspect_data["amount_cop"] == 45000
+        assert inspect_data["is_duplicate"] is False

@@ -2,6 +2,8 @@
 let selectedFile = null;
 let allTransactions = [];
 let currentFilter = 'ALL';
+let verifyMode = 'simulate'; // 'simulate' (default, free inspection) or 'reconcile' (requires order)
+let lastInspectedData = null;
 
 // Format COP currency
 function formatCOP(amount) {
@@ -10,6 +12,31 @@ function formatCOP(amount) {
     currency: 'COP',
     maximumFractionDigits: 0
   }).format(amount);
+}
+
+// Set Verify Mode: Simulate vs Reconcile
+function setVerifyMode(mode) {
+  verifyMode = mode;
+  const simBtn = document.getElementById('mode-simulate-btn');
+  const orderBtn = document.getElementById('mode-order-btn');
+  const orderContainer = document.getElementById('order-select-container');
+  const submitBtn = document.getElementById('submit-verify-btn');
+
+  if (mode === 'simulate') {
+    simBtn.className = "py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20";
+    orderBtn.className = "py-2 px-3 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition flex items-center justify-center space-x-1.5";
+    orderContainer.classList.add('hidden');
+    document.getElementById('order-select').required = false;
+    submitBtn.innerHTML = '<i data-lucide="flask-conical" class="w-5 h-5"></i><span>Inspeccionar y Simular Comprobante</span>';
+  } else {
+    orderBtn.className = "py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20";
+    simBtn.className = "py-2 px-3 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition flex items-center justify-center space-x-1.5";
+    orderContainer.classList.remove('hidden');
+    document.getElementById('order-select').required = true;
+    submitBtn.innerHTML = '<i data-lucide="shield-check" class="w-5 h-5"></i><span>Procesar y Conciliar con Orden</span>';
+    loadPendingOrders();
+  }
+  lucide.createIcons();
 }
 
 // Switch between Navigation Tabs
@@ -25,7 +52,9 @@ function switchTab(tab) {
 
     btnVerify.className = "flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-all bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20";
     btnTrans.className = "flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 transition-all";
-    loadPendingOrders();
+    if (verifyMode === 'reconcile') {
+      loadPendingOrders();
+    }
   } else {
     verifyTab.classList.add('hidden');
     transTab.classList.remove('hidden');
@@ -118,16 +147,17 @@ function clearFileSelection(e) {
   document.getElementById('dropzone-preview').classList.add('hidden');
 }
 
-// Submit Verification to Backend
+// Submit Verification / Simulation to Backend
 async function handleVerifySubmit(e) {
   e.preventDefault();
-  const orderId = document.getElementById('order-select').value;
-  if (!orderId) {
-    alert('Por favor selecciona una orden de venta.');
-    return;
-  }
   if (!selectedFile) {
     alert('Por favor adjunta la imagen del comprobante de pago.');
+    return;
+  }
+
+  const orderId = document.getElementById('order-select').value;
+  if (verifyMode === 'reconcile' && !orderId) {
+    alert('Por favor selecciona una orden de venta o cambia al "Modo Simulación Libre".');
     return;
   }
 
@@ -144,11 +174,16 @@ async function handleVerifySubmit(e) {
   submitBtn.classList.add('opacity-50');
 
   const formData = new FormData();
-  formData.append('order_id', orderId);
   formData.append('file', selectedFile);
 
   try {
-    const res = await fetch('/api/v1/receipts/verify', {
+    let endpoint = '/api/v1/receipts/inspect';
+    if (verifyMode === 'reconcile') {
+      endpoint = '/api/v1/receipts/verify';
+      formData.append('order_id', orderId);
+    }
+
+    const res = await fetch(endpoint, {
       method: 'POST',
       body: formData,
     });
@@ -157,20 +192,53 @@ async function handleVerifySubmit(e) {
     document.getElementById('verdict-loading').classList.add('hidden');
 
     if (res.ok) {
-      // Success
+      lastInspectedData = data;
       document.getElementById('verdict-success').classList.remove('hidden');
-      document.getElementById('verdict-status-pill').className = "text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
-      document.getElementById('verdict-status-pill').textContent = "VERIFICADO";
 
-      document.getElementById('res-bank').textContent = data.bank_platform;
-      document.getElementById('res-ref').textContent = data.reference_number;
-      document.getElementById('res-amount').textContent = formatCOP(data.extracted_amount);
-      document.getElementById('res-date').textContent = new Date(data.receipt_timestamp).toLocaleString('es-CO');
-      document.getElementById('res-hash').textContent = data.image_sha256;
-      document.getElementById('res-hash').title = data.image_sha256;
+      if (verifyMode === 'simulate') {
+        // Simulation Result
+        if (data.is_duplicate) {
+          document.getElementById('verdict-status-pill').className = "text-xs font-bold px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30";
+          document.getElementById('verdict-status-pill').textContent = "DUPLICADO DETECTADO";
+        } else {
+          document.getElementById('verdict-status-pill').className = "text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+          document.getElementById('verdict-status-pill').textContent = "SIMULACIÓN EXITOSA";
+        }
 
-      // Reload orders to update dropdown
-      loadPendingOrders();
+        document.getElementById('res-bank').textContent = data.bank_platform;
+        document.getElementById('res-ref').textContent = data.reference_number;
+        document.getElementById('res-amount').textContent = formatCOP(data.amount_cop);
+        document.getElementById('res-date').textContent = new Date(data.receipt_timestamp).toLocaleString('es-CO');
+        document.getElementById('res-hash').textContent = data.image_sha256;
+        document.getElementById('res-hash').title = data.image_sha256;
+
+        // Render Quick Reconcile Button if in simulation mode
+        const container = document.getElementById('verdict-success');
+        let autoBtn = document.getElementById('auto-reconcile-btn');
+        if (!autoBtn) {
+          autoBtn = document.createElement('button');
+          autoBtn.id = 'auto-reconcile-btn';
+          autoBtn.className = "w-full mt-4 py-2.5 px-4 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/30 transition flex items-center justify-center space-x-2";
+          autoBtn.onclick = autoReconcileInspected;
+          container.appendChild(autoBtn);
+        }
+        autoBtn.innerHTML = `<i data-lucide="zap" class="w-4 h-4"></i><span>Crear Orden de ${formatCOP(data.amount_cop)} y Conciliar</span>`;
+      } else {
+        // Reconcile Result
+        document.getElementById('verdict-status-pill').className = "text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+        document.getElementById('verdict-status-pill').textContent = "PAGO VERIFICADO";
+
+        document.getElementById('res-bank').textContent = data.bank_platform;
+        document.getElementById('res-ref').textContent = data.reference_number;
+        document.getElementById('res-amount').textContent = formatCOP(data.extracted_amount);
+        document.getElementById('res-date').textContent = new Date(data.receipt_timestamp).toLocaleString('es-CO');
+        document.getElementById('res-hash').textContent = data.image_sha256;
+        document.getElementById('res-hash').title = data.image_sha256;
+
+        const autoBtn = document.getElementById('auto-reconcile-btn');
+        if (autoBtn) autoBtn.remove();
+        loadPendingOrders();
+      }
     } else {
       // Error
       document.getElementById('verdict-error').classList.remove('hidden');
@@ -192,6 +260,37 @@ async function handleVerifySubmit(e) {
     submitBtn.disabled = false;
     submitBtn.classList.remove('opacity-50');
     lucide.createIcons();
+  }
+}
+
+// Auto-Reconcile Inspected Receipt
+async function autoReconcileInspected() {
+  if (!lastInspectedData || !selectedFile) return;
+
+  try {
+    const orderNumber = 'ORD-AUTO-' + Math.floor(1000 + Math.random() * 9000);
+    const resOrder = await fetch('/api/v1/orders/quick', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_number: orderNumber,
+        total_amount: lastInspectedData.amount_cop,
+      }),
+    });
+
+    if (!resOrder.ok) throw new Error('No se pudo crear la orden automática');
+    const order = await resOrder.json();
+
+    // Now reconcile
+    setVerifyMode('reconcile');
+    await loadPendingOrders(order.id);
+    document.getElementById('order-select').value = order.id;
+
+    // Trigger verify
+    const form = document.getElementById('verify-form');
+    form.dispatchEvent(new Event('submit', { cancelable: true }));
+  } catch (err) {
+    alert('Error al auto-conciliar: ' + err.message);
   }
 }
 
@@ -226,7 +325,7 @@ async function handleQuickOrderSubmit(e) {
 
     const order = await res.json();
     closeQuickOrderModal();
-    // Reload pending orders and preselect the newly created one
+    setVerifyMode('reconcile');
     await loadPendingOrders(order.id);
   } catch (err) {
     alert('Error de conexión: ' + err.message);
@@ -364,6 +463,6 @@ function closeDetailModal() {
 
 // Initialize on page load
 window.addEventListener('DOMContentLoaded', () => {
-  loadPendingOrders();
+  setVerifyMode('simulate');
   lucide.createIcons();
 });

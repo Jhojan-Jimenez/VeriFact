@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from src.api.schemas.receipt import ReceiptVerificationResponse
+from src.api.schemas.receipt import ReceiptInspectionResponse, ReceiptVerificationResponse
 from src.core.database import get_session
 from src.domain.models import PaymentReceipt, ReceiptVerificationStatus
 from src.services.verification_service import VerificationService
@@ -12,6 +12,57 @@ from src.services.vision_service import VisionService
 
 router = APIRouter(prefix="/receipts", tags=["Receipt Verification"])
 vision_service = VisionService()
+
+
+@router.post("/inspect", response_model=ReceiptInspectionResponse, status_code=status.HTTP_200_OK)
+async def inspect_receipt(
+    file: UploadFile = File(..., description="Receipt image file to inspect without requiring an order"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Simulate and inspect a receipt: extract financial details without order dependency."""
+    contents = await file.read()
+    if not contents or len(contents) < 50:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is empty or corrupted",
+        )
+
+    # 1. Run Vision OCR extraction
+    extracted_data, image_sha256 = vision_service.process_receipt(contents)
+
+    # 2. Check duplicate status in background without rejecting
+    stmt = select(PaymentReceipt).where(
+        (PaymentReceipt.image_sha256 == image_sha256)
+        | (
+            (PaymentReceipt.bank_platform == extracted_data.bank_platform)
+            & (PaymentReceipt.reference_number == extracted_data.reference_number)
+            & (PaymentReceipt.verification_status == ReceiptVerificationStatus.VERIFIED)
+        )
+    )
+    res = await session.execute(stmt)
+    existing = res.scalar_one_or_none()
+
+    is_duplicate = existing is not None
+    dup_info = None
+    if existing:
+        dup_info = {
+            "existing_receipt_id": str(existing.id),
+            "existing_order_id": str(existing.order_id) if existing.order_id else None,
+            "bank": existing.bank_platform.value,
+            "reference": existing.reference_number,
+        }
+
+    return ReceiptInspectionResponse(
+        bank_platform=extracted_data.bank_platform,
+        reference_number=extracted_data.reference_number,
+        amount_cop=extracted_data.amount_cop,
+        receipt_timestamp=extracted_data.receipt_timestamp,
+        concept=extracted_data.concept,
+        image_sha256=image_sha256,
+        raw_text_snippet=extracted_data.raw_text[:400] if extracted_data.raw_text else "",
+        is_duplicate=is_duplicate,
+        duplicate_info=dup_info,
+    )
 
 
 @router.get("", response_model=list[ReceiptVerificationResponse])

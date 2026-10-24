@@ -93,9 +93,21 @@
             <p class="text-sm text-slate-400 mt-1">Sube la captura de pantalla o recibo bancario (Nequi, Daviplata, Bancolombia, Bre-B o QR DIAN).</p>
           </div>
 
+          <!-- Mode Toggle: Simulación Libre vs Conciliación con Orden -->
+          <div class="mb-6 p-1 bg-slate-950/80 rounded-xl border border-slate-800 grid grid-cols-2 gap-1">
+            <button type="button" id="mode-simulate-btn" onclick="setVerifyMode('simulate')" class="py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20">
+              <i data-lucide="flask-conical" class="w-3.5 h-3.5"></i>
+              <span>Simulación Libre (Sin Orden)</span>
+            </button>
+            <button type="button" id="mode-order-btn" onclick="setVerifyMode('reconcile')" class="py-2 px-3 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition flex items-center justify-center space-x-1.5">
+              <i data-lucide="file-check-2" class="w-3.5 h-3.5"></i>
+              <span>Conciliar con Orden</span>
+            </button>
+          </div>
+
           <form id="verify-form" onsubmit="handleVerifySubmit(event)" class="space-y-6">
-            <!-- Order Selector -->
-            <div>
+            <!-- Order Selector (Visible only in 'reconcile' mode) -->
+            <div id="order-select-container" class="hidden">
               <div class="flex items-center justify-between mb-2">
                 <label for="order-select" class="block text-sm font-medium text-slate-300">
                   Orden de Venta Asociada <span class="text-emerald-400">*</span>
@@ -106,7 +118,7 @@
                 </button>
               </div>
               <div class="relative">
-                <select id="order-select" required class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 appearance-none">
+                <select id="order-select" class="w-full bg-slate-950/80 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50 appearance-none">
                   <option value="" disabled selected>Selecciona una orden pendiente...</option>
                 </select>
                 <i data-lucide="chevron-down" class="w-4 h-4 text-slate-400 absolute right-4 top-3.5 pointer-events-none"></i>

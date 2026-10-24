@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -26,3 +27,15 @@ class ReceiptVerificationResponse(BaseModel):
     image_sha256: str
     failure_reason: str | None = None
     created_at: datetime
+
+
+class ReceiptInspectionResponse(BaseModel):
+    bank_platform: BankPlatform
+    reference_number: str
+    amount_cop: int
+    receipt_timestamp: datetime
+    concept: str | None = None
+    image_sha256: str
+    raw_text_snippet: str
+    is_duplicate: bool
+    duplicate_info: dict[str, Any] | None = None
