@@ -1,0 +1,35 @@
+services:
+  verifact-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: verifact:latest
+    container_name: verifact-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:////data/verifact.db
+      - RECEIPT_TIME_TOLERANCE_MINUTES=30
+      - DEBUG=false
+    volumes:
+      - verifact_data:/data
+    # Resource constraints aligned with OCI ARM64 VM capacity
+    deploy:
+      resources:
+        limits:
+          cpus: "1.00"
+          memory: 512M
+        reservations:
+          memory: 128M
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.verifact.rule=Host(`verifact.jhojan.cloud`)"
+      - "traefik.http.routers.verifact.entrypoints=https"
+      - "traefik.http.routers.verifact.tls=true"
+      - "traefik.http.routers.verifact.tls.certresolver=letsencrypt"
+      - "traefik.http.services.verifact.loadbalancer.server.port=8000"
+
+volumes:
+  verifact_data:
+    driver: local
