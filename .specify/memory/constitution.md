@@ -1,50 +1,64 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+# VeriFact Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Deterministic-First & Local-Only Visual Pipeline
+Every receipt, invoice, and payment voucher is processed locally using open-source, deterministic computer vision tools (OpenCV, pyzbar, Tesseract OCR). 
+- **Zero External API Dependency:** No paid external LLM/Vision APIs in the core pipeline; completely offline-capable and cost-free.
+- **Privacy & Security:** Sensitive financial data (account numbers, names, balances) remains strictly on-premise/local.
+- **Pre-processing Standard:** Raw images must pass through standardized geometric correction, noise reduction, and adaptive binarization before OCR extraction.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### II. Backend-First API-Driven Architecture
+The system core is exposed exclusively as a robust, decoupled REST API built with **Python 3.12+ and FastAPI**.
+- Clean separation of concerns: `api` (routes/schemas), `services` (OCR, parsing, inventory), `domain` (business models), and `repositories` (persistence).
+- Strict validation with **Pydantic v2** for all inputs and outputs.
+- Comprehensive OpenAPI / Swagger documentation out-of-the-box for consumption by web, mobile apps, POS terminals, or WhatsApp bots.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### III. Test-Driven & Fixture-Verified Extraction (TDD Mandatory)
+Parser logic and receipt extraction cannot be merged without golden test cases.
+- Synthetic and anonymized image fixtures for each supported Colombian banking slip: **Nequi**, **Daviplata**, **QR Bancolombia**, **Bre-B / Transfiya**, and **Facturación Electrónica DIAN**.
+- Each slip parser must achieve 100% extraction accuracy on reference numbers, monetary amounts, and timestamps for known test fixtures.
+- Test suites must run fast via `pytest` without requiring external network connectivity.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### IV. Idempotency & Anti-Fraud Verification
+To prevent fraudulent double-spending or altered receipts:
+- **Deduplication:** Every incoming transaction must register a perceptual or cryptographic hash (SHA-256) of the image and an index on `(bank_platform, transaction_reference)`.
+- Duplicate attempts must be rejected with deterministic HTTP 409 Conflict and an audit alert.
+- **Validation Rules:** Extracted dates must fall within acceptable sliding windows; monetary values must strictly parse as Colombian Pesos (COP integers or precise decimals).
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### V. Decoupled Persistence with SQLite WAL (Postgres-Ready)
+- Initial database engine is **SQLite with Write-Ahead Logging (WAL)** enabled for zero-config, low latency, and concurrent read capabilities.
+- Repository pattern using **SQLAlchemy 2.0 / SQLModel** ensuring zero vendor lock-in, enabling drop-in migration to PostgreSQL 16 by changing only the connection DSN.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+---
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+## Technical Constraints & Standards
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+1. **Runtime:** Python 3.12+ managed with `uv`.
+2. **Web Framework:** FastAPI with async handlers and Pydantic v2 models.
+3. **Vision & OCR Stack:**
+   - `opencv-python-headless` for image transformations (deskew, thresholding, ROI cropping).
+   - `pyzbar` for rapid 2D/QR code decoding.
+   - `pytesseract` with Spanish language training data (`spa.traineddata`).
+4. **Parser Taxonomy:**
+   - Separate extractor strategies under `services/extractors/` for `nequi.py`, `daviplata.py`, `bancolombia_qr.py`, `bre_b.py`, and `dian_qr.py`.
+5. **Inventory Traceability:**
+   - Transactions must support linking to inventory line items (SKU, description, unit price, quantity) to maintain an audit trail of stock decrements.
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+---
+
+## Development Workflow & Quality Gates
+
+1. **Format & Quality:** `ruff check` and `ruff format` mandatory on all codebase changes.
+2. **Type Safety:** Strict type hints across all function signatures and domain models.
+3. **Spec Alignment:** Every new feature must trace back to a corresponding `spec.md` under the `.specify/` or `specs/` directory before coding.
+
+---
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+- This Constitution is the authoritative operational baseline for the VeriFact repository.
+- Changes to core architecture, supported banks, or storage backends require an explicit amendment to this document.
+- In case of ambiguity during implementation, priority is given to **Data Integrity > Local Determinism > Processing Speed > Feature Breadth**.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: 2026-10-24 | **Last Amended**: 2026-10-24
