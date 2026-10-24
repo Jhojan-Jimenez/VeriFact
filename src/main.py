@@ -1,13 +1,17 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.api.v1.router import api_v1_router
 from src.core.config import settings
 from src.core.database import init_db
 from src.core.exceptions import VeriFactBaseException
+
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 @asynccontextmanager
@@ -46,6 +50,21 @@ async def verifact_exception_handler(request: Request, exc: VeriFactBaseExceptio
             }
         },
     )
+
+
+# Mount static assets directory
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+# Serve frontend dashboard SPA
+@app.get("/", include_in_schema=False)
+@app.get("/dashboard", include_in_schema=False)
+async def serve_dashboard():
+    index_file = STATIC_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file)
+    return {"message": "VeriFact API is running. UI assets not found."}
 
 
 # Register API v1 routes

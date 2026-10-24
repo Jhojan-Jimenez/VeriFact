@@ -17,6 +17,11 @@ class OrderCreate(BaseModel):
     items: list[OrderItemCreate] = Field(min_length=1)
 
 
+class OrderQuickCreate(BaseModel):
+    order_number: str
+    total_amount: int = Field(gt=0, description="Total amount in COP")
+
+
 class OrderItemResponse(BaseModel):
     id: uuid.UUID
     sku: str

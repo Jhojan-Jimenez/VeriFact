@@ -5,11 +5,83 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
-from src.api.schemas.order import OrderCreate, OrderItemResponse, OrderResponse
+from src.api.schemas.order import (
+    OrderCreate,
+    OrderItemResponse,
+    OrderQuickCreate,
+    OrderResponse,
+)
 from src.core.database import get_session
-from src.domain.models import InventoryItem, Order, OrderItem
+from src.domain.models import InventoryItem, Order, OrderItem, OrderStatus
 
 router = APIRouter(prefix="/orders", tags=["Orders"])
+
+
+@router.get("", response_model=list[OrderResponse])
+async def list_orders(
+    status_filter: OrderStatus | None = None,
+    limit: int = 50,
+    session: AsyncSession = Depends(get_session),
+):
+    """List orders with optional status filter."""
+    stmt = select(Order).options(selectinload(Order.items)).order_by(Order.created_at.desc()).limit(limit)
+    if status_filter:
+        stmt = stmt.where(Order.status == status_filter)
+
+    res = await session.execute(stmt)
+    orders = res.scalars().all()
+
+    return [
+        OrderResponse(
+            id=o.id,
+            order_number=o.order_number,
+            total_amount=o.total_amount,
+            status=o.status,
+            created_at=o.created_at,
+            items=[
+                OrderItemResponse(
+                    id=oi.id,
+                    sku=oi.sku,
+                    quantity=oi.quantity,
+                    unit_price=oi.unit_price,
+                )
+                for oi in o.items
+            ],
+        )
+        for o in orders
+    ]
+
+
+@router.post("/quick", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
+async def create_quick_order(
+    payload: OrderQuickCreate,
+    session: AsyncSession = Depends(get_session),
+):
+    """Create a quick order with a total amount in COP without requiring catalog items."""
+    existing = await session.execute(select(Order).where(Order.order_number == payload.order_number))
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Order with number '{payload.order_number}' already exists",
+        )
+
+    order = Order(
+        order_number=payload.order_number,
+        total_amount=payload.total_amount,
+        items=[],
+    )
+    session.add(order)
+    await session.commit()
+    await session.refresh(order)
+
+    return OrderResponse(
+        id=order.id,
+        order_number=order.order_number,
+        total_amount=order.total_amount,
+        status=order.status,
+        created_at=order.created_at,
+        items=[],
+    )
 
 
 @router.post("", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)

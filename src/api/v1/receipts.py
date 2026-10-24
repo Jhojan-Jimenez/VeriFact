@@ -6,12 +6,43 @@ from sqlmodel import select
 
 from src.api.schemas.receipt import ReceiptVerificationResponse
 from src.core.database import get_session
-from src.domain.models import PaymentReceipt
+from src.domain.models import PaymentReceipt, ReceiptVerificationStatus
 from src.services.verification_service import VerificationService
 from src.services.vision_service import VisionService
 
 router = APIRouter(prefix="/receipts", tags=["Receipt Verification"])
 vision_service = VisionService()
+
+
+@router.get("", response_model=list[ReceiptVerificationResponse])
+async def list_receipts(
+    verification_status: ReceiptVerificationStatus | None = None,
+    limit: int = 50,
+    session: AsyncSession = Depends(get_session),
+):
+    """List processed payment receipts ordered by creation timestamp descending."""
+    stmt = select(PaymentReceipt).order_by(PaymentReceipt.created_at.desc()).limit(limit)
+    if verification_status:
+        stmt = stmt.where(PaymentReceipt.verification_status == verification_status)
+
+    res = await session.execute(stmt)
+    receipts = res.scalars().all()
+
+    return [
+        ReceiptVerificationResponse(
+            id=r.id,
+            order_id=r.order_id,
+            bank_platform=r.bank_platform,
+            reference_number=r.reference_number,
+            extracted_amount=r.extracted_amount,
+            receipt_timestamp=r.receipt_timestamp,
+            verification_status=r.verification_status,
+            image_sha256=r.image_sha256,
+            failure_reason=r.failure_reason,
+            created_at=r.created_at,
+        )
+        for r in receipts
+    ]
 
 
 @router.post("/verify", response_model=ReceiptVerificationResponse, status_code=status.HTTP_200_OK)
