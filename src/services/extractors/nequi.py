@@ -12,27 +12,35 @@ class NequiExtractor(BaseReceiptExtractor):
 
     def can_handle(self, text: str) -> bool:
         lower = text.lower()
-        return ("nequi" in lower) or ("enviaste" in lower and "referencia" in lower) or ("¡listo!" in lower)
+        return (
+            ("nequi" in lower)
+            or ("envio realizado" in lower)
+            or ("envío realizado" in lower)
+            or ("enviaste" in lower and "referencia" in lower)
+            or ("¡listo!" in lower)
+            or ("¿de dónde salió la plata?" in lower)
+            or ("¿de donde salio la plata?" in lower)
+        )
 
     def extract(self, text: str, qr_data: list[str] | None = None) -> ExtractedReceiptData:
         # 1. Reference Extraction (e.g., M12345678, M 12345678, or alphanumeric ref)
-        ref_match = re.search(r"(?:referencia|ref\.?)\s*:?\s*([A-Za-z0-9\-]{5,15})", text, re.IGNORECASE)
+        ref_match = re.search(r"(?:referencia|ref\.?|hetero)\s*:?\s*([A-Za-z0-9\-]{5,15})", text, re.IGNORECASE)
         if not ref_match:
             # Try standalone M-number pattern
-            ref_match = re.search(r"\b(M\s*\d{7,10})\b", text, re.IGNORECASE)
+            ref_match = re.search(r"\b(M\s*[O0-9A-Za-z]{6,12})\b", text, re.IGNORECASE)
 
-        if not ref_match:
-            raise ExtractionFailedError(
-                message="Could not extract Nequi reference number",
-                details={"extractor": "NequiExtractor", "text_snippet": text[:200]},
-            )
-        reference_number = ref_match.group(1).replace(" ", "").upper()
+        reference_number = "SIN_REFERENCIA"
+        if ref_match:
+            reference_number = ref_match.group(1).replace(" ", "").upper()
 
         # 2. Amount Extraction (e.g. $ 50.000, ¿Cuánto? $50.000)
-        amount_match = re.search(r"(?:cu[aá]nto\??|total|enviaste)?\s*\$\s*([\d\.,]+)", text, re.IGNORECASE)
+        amount_match = re.search(r"(?:cu[aá]nto\??|total|enviaste|unante)?\s*\$\s*([\d\.,]+)", text, re.IGNORECASE)
         if not amount_match:
             # Fallback to any currency string
             amount_match = re.search(r"\$\s*([\d\.,]+)", text)
+        if not amount_match:
+            # Fallback to line right after ¿cuánto? or similar
+            amount_match = re.search(r"(?:cu[aá]nto\??|unante\??)\s*\n+\s*([0-9\.,]+)", text, re.IGNORECASE)
 
         if not amount_match:
             raise ExtractionFailedError(

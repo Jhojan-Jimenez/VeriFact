@@ -8,6 +8,7 @@ from src.services.extractors.base import BaseReceiptExtractor
 from src.services.extractors.bre_b import BreBExtractor
 from src.services.extractors.daviplata import DaviplataExtractor
 from src.services.extractors.dian_invoice import DianInvoiceExtractor
+from src.services.extractors.generic import GenericSlipExtractor
 from src.services.extractors.nequi import NequiExtractor
 from src.services.vision.ocr_engine import OCREngine
 from src.services.vision.preprocessor import ImagePreprocessor
@@ -77,8 +78,17 @@ class VisionService:
                 except ExtractionFailedError:
                     continue
 
-        # If no specialized extractor matched
+        # 6. Universal Graceful Fallback: Extract amount and reference generically
+        generic_ext = GenericSlipExtractor()
+        if generic_ext.can_handle(raw_text):
+            try:
+                data = generic_ext.extract(raw_text, qr_data=qr_results)
+                return data, sha256_hash
+            except ExtractionFailedError:
+                pass
+
+        # If completely unreadable
         raise ExtractionFailedError(
-            message="Unrecognized slip format: could not match Nequi, Daviplata, Bancolombia, Bre-B, or DIAN",
+            message="No se pudieron identificar los datos del comprobante (monto o referencia)",
             details={"raw_snippet": raw_text[:300] if raw_text else "empty"},
         )
