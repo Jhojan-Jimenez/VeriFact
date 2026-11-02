@@ -2,8 +2,9 @@
 let selectedFile = null;
 let allTransactions = [];
 let currentFilter = 'ALL';
-let verifyMode = 'simulate'; // 'simulate' (default, free inspection) or 'reconcile' (requires order)
+let verifyMode = 'simulate'; // 'simulate' or 'reconcile'
 let lastInspectedData = null;
+let currentTab = 'dashboard';
 
 // Format COP currency
 function formatCOP(amount) {
@@ -11,7 +12,49 @@ function formatCOP(amount) {
     style: 'currency',
     currency: 'COP',
     maximumFractionDigits: 0
-  }).format(amount);
+  }).format(amount || 0);
+}
+
+// Switch between Navigation Tabs (Dashboard, Ingresos, Escanear)
+function switchTab(tab) {
+  currentTab = tab;
+  const tabs = ['dashboard', 'ingresos', 'escanear'];
+  const titles = {
+    'dashboard': 'Dashboard General',
+    'ingresos': 'Ingresos y Conciliaciones',
+    'escanear': 'Subir Comprobante / QR Bancario'
+  };
+
+  tabs.forEach(t => {
+    const view = document.getElementById(`view-${t}`);
+    const navBtn = document.getElementById(`nav-${t}`);
+    if (view && navBtn) {
+      if (t === tab) {
+        view.classList.add('active');
+        navBtn.className = "w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition bg-blue-50 text-blue-700";
+        // make sure icon is blue
+        const icon = navBtn.querySelector('i');
+        if (icon) icon.className = "w-4 h-4 text-blue-600";
+      } else {
+        view.classList.remove('active');
+        navBtn.className = "w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition";
+        const icon = navBtn.querySelector('i');
+        if (icon && t === 'ingresos') icon.className = "w-4 h-4 text-emerald-600";
+        else if (icon) icon.className = "w-4 h-4 text-slate-500";
+      }
+    }
+  });
+
+  const pageTitle = document.getElementById('page-title');
+  if (pageTitle && titles[tab]) {
+    pageTitle.textContent = titles[tab];
+  }
+
+  if (tab === 'escanear' && verifyMode === 'reconcile') {
+    loadPendingOrders();
+  }
+
+  lucide.createIcons();
 }
 
 // Set Verify Mode: Simulate vs Reconcile
@@ -23,45 +66,18 @@ function setVerifyMode(mode) {
   const submitBtn = document.getElementById('submit-verify-btn');
 
   if (mode === 'simulate') {
-    simBtn.className = "py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20";
-    orderBtn.className = "py-2 px-3 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition flex items-center justify-center space-x-1.5";
+    simBtn.className = "flex-1 py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-blue-600 text-white shadow-xs";
+    orderBtn.className = "flex-1 py-2 px-3 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition flex items-center justify-center space-x-1.5";
     orderContainer.classList.add('hidden');
     document.getElementById('order-select').required = false;
-    submitBtn.innerHTML = '<i data-lucide="flask-conical" class="w-5 h-5"></i><span>Inspeccionar y Simular Comprobante</span>';
+    submitBtn.innerHTML = '<i data-lucide="flask-conical" class="w-4 h-4"></i><span>Inspeccionar y Extraer Datos</span>';
   } else {
-    orderBtn.className = "py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20";
-    simBtn.className = "py-2 px-3 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition flex items-center justify-center space-x-1.5";
+    orderBtn.className = "flex-1 py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-blue-600 text-white shadow-xs";
+    simBtn.className = "flex-1 py-2 px-3 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition flex items-center justify-center space-x-1.5";
     orderContainer.classList.remove('hidden');
     document.getElementById('order-select').required = true;
-    submitBtn.innerHTML = '<i data-lucide="shield-check" class="w-5 h-5"></i><span>Procesar y Conciliar con Orden</span>';
+    submitBtn.innerHTML = '<i data-lucide="shield-check" class="w-4 h-4"></i><span>Procesar y Conciliar con Orden</span>';
     loadPendingOrders();
-  }
-  lucide.createIcons();
-}
-
-// Switch between Navigation Tabs
-function switchTab(tab) {
-  const verifyTab = document.getElementById('tab-verify');
-  const transTab = document.getElementById('tab-transactions');
-  const btnVerify = document.getElementById('tab-btn-verify');
-  const btnTrans = document.getElementById('tab-btn-transactions');
-
-  if (tab === 'verify') {
-    verifyTab.classList.remove('hidden');
-    transTab.classList.add('hidden');
-
-    btnVerify.className = "flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-all bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20";
-    btnTrans.className = "flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 transition-all";
-    if (verifyMode === 'reconcile') {
-      loadPendingOrders();
-    }
-  } else {
-    verifyTab.classList.add('hidden');
-    transTab.classList.remove('hidden');
-
-    btnTrans.className = "flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-all bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20";
-    btnVerify.className = "flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 transition-all";
-    loadTransactions();
   }
   lucide.createIcons();
 }
@@ -77,7 +93,7 @@ async function loadPendingOrders(preselectedId = null) {
     select.innerHTML = '<option value="" disabled selected>Selecciona una orden pendiente...</option>';
     
     if (orders.length === 0) {
-      select.innerHTML += '<option value="" disabled>⚠️ No hay órdenes pendientes (Crea una arriba)</option>';
+      select.innerHTML += '<option value="" disabled>⚠️ No hay órdenes pendientes (Crea una)</option>';
     } else {
       orders.forEach(order => {
         const opt = document.createElement('option');
@@ -97,17 +113,17 @@ async function loadPendingOrders(preselectedId = null) {
 // Drag & Drop Handlers
 function handleDragOver(e) {
   e.preventDefault();
-  document.getElementById('dropzone').classList.add('border-emerald-500', 'bg-slate-900/80');
+  document.getElementById('dropzone').classList.add('border-blue-500', 'bg-blue-50/40');
 }
 
 function handleDragLeave(e) {
   e.preventDefault();
-  document.getElementById('dropzone').classList.remove('border-emerald-500', 'bg-slate-900/80');
+  document.getElementById('dropzone').classList.remove('border-blue-500', 'bg-blue-50/40');
 }
 
 function handleDrop(e) {
   e.preventDefault();
-  document.getElementById('dropzone').classList.remove('border-emerald-500', 'bg-slate-900/80');
+  document.getElementById('dropzone').classList.remove('border-blue-500', 'bg-blue-50/40');
   if (e.dataTransfer.files && e.dataTransfer.files[0]) {
     setFile(e.dataTransfer.files[0]);
   }
@@ -126,7 +142,6 @@ function setFile(file) {
   }
   selectedFile = file;
 
-  // Show preview
   const reader = new FileReader();
   reader.onload = (e) => {
     document.getElementById('preview-img').src = e.target.result;
@@ -147,7 +162,7 @@ function clearFileSelection(e) {
   document.getElementById('dropzone-preview').classList.add('hidden');
 }
 
-// Submit Verification / Simulation to Backend
+// Handle Form Submit
 async function handleVerifySubmit(e) {
   e.preventDefault();
   if (!selectedFile) {
@@ -161,12 +176,12 @@ async function handleVerifySubmit(e) {
     return;
   }
 
-  // Set UI Loading State
+  // Set Loading UI
   document.getElementById('verdict-idle').classList.add('hidden');
   document.getElementById('verdict-success').classList.add('hidden');
   document.getElementById('verdict-error').classList.add('hidden');
   document.getElementById('verdict-loading').classList.remove('hidden');
-  document.getElementById('verdict-status-pill').className = "text-xs font-bold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20";
+  document.getElementById('verdict-status-pill').className = "text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200";
   document.getElementById('verdict-status-pill').textContent = "Procesando...";
 
   const submitBtn = document.getElementById('submit-verify-btn');
@@ -196,12 +211,11 @@ async function handleVerifySubmit(e) {
       document.getElementById('verdict-success').classList.remove('hidden');
 
       if (verifyMode === 'simulate') {
-        // Simulation Result
         if (data.is_duplicate) {
-          document.getElementById('verdict-status-pill').className = "text-xs font-bold px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30";
+          document.getElementById('verdict-status-pill').className = "text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200";
           document.getElementById('verdict-status-pill').textContent = "DUPLICADO DETECTADO";
         } else {
-          document.getElementById('verdict-status-pill').className = "text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+          document.getElementById('verdict-status-pill').className = "text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200";
           document.getElementById('verdict-status-pill').textContent = "SIMULACIÓN EXITOSA";
         }
 
@@ -212,21 +226,20 @@ async function handleVerifySubmit(e) {
         document.getElementById('res-hash').textContent = data.image_sha256;
         document.getElementById('res-hash').title = data.image_sha256;
 
-        // Render Quick Reconcile Button if in simulation mode
+        // Auto Reconcile CTA button
         const container = document.getElementById('verdict-success');
         let autoBtn = document.getElementById('auto-reconcile-btn');
         if (!autoBtn) {
           autoBtn = document.createElement('button');
           autoBtn.id = 'auto-reconcile-btn';
-          autoBtn.className = "w-full mt-4 py-2.5 px-4 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/30 transition flex items-center justify-center space-x-2";
+          autoBtn.className = "w-full mt-3 py-2 px-3 rounded-lg text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white transition flex items-center justify-center space-x-1.5";
           autoBtn.onclick = autoReconcileInspected;
           container.appendChild(autoBtn);
         }
-        autoBtn.innerHTML = `<i data-lucide="zap" class="w-4 h-4"></i><span>Crear Orden de ${formatCOP(data.amount_cop)} y Conciliar</span>`;
+        autoBtn.innerHTML = `<i data-lucide="zap" class="w-3.5 h-3.5 text-amber-400"></i><span>Crear Orden de ${formatCOP(data.amount_cop)} y Conciliar</span>`;
       } else {
-        // Reconcile Result
-        document.getElementById('verdict-status-pill').className = "text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
-        document.getElementById('verdict-status-pill').textContent = "PAGO VERIFICADO";
+        document.getElementById('verdict-status-pill').className = "text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200";
+        document.getElementById('verdict-status-pill').textContent = "PAGO CONCILIADO";
 
         document.getElementById('res-bank').textContent = data.bank_platform;
         document.getElementById('res-ref').textContent = data.reference_number;
@@ -239,10 +252,12 @@ async function handleVerifySubmit(e) {
         if (autoBtn) autoBtn.remove();
         loadPendingOrders();
       }
+
+      // Refresh stats and tables
+      loadAllData();
     } else {
-      // Error
       document.getElementById('verdict-error').classList.remove('hidden');
-      document.getElementById('verdict-status-pill').className = "text-xs font-bold px-2.5 py-1 rounded-full bg-red-500/20 text-red-400 border border-red-500/30";
+      document.getElementById('verdict-status-pill').className = "text-[11px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200";
       document.getElementById('verdict-status-pill').textContent = "RECHAZADO";
 
       const err = data.error || {};
@@ -268,7 +283,7 @@ async function autoReconcileInspected() {
   if (!lastInspectedData || !selectedFile) return;
 
   try {
-    const orderNumber = 'ORD-AUTO-' + Math.floor(1000 + Math.random() * 9000);
+    const orderNumber = 'ORD-' + Math.floor(1000 + Math.random() * 9000);
     const resOrder = await fetch('/api/v1/orders/quick', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -281,12 +296,10 @@ async function autoReconcileInspected() {
     if (!resOrder.ok) throw new Error('No se pudo crear la orden automática');
     const order = await resOrder.json();
 
-    // Now reconcile
     setVerifyMode('reconcile');
     await loadPendingOrders(order.id);
     document.getElementById('order-select').value = order.id;
 
-    // Trigger verify
     const form = document.getElementById('verify-form');
     form.dispatchEvent(new Event('submit', { cancelable: true }));
   } catch (err) {
@@ -332,26 +345,106 @@ async function handleQuickOrderSubmit(e) {
   }
 }
 
-// Load and Render Transactions Table
-async function loadTransactions() {
-  const tbody = document.getElementById('transactions-tbody');
-  const emptyState = document.getElementById('table-empty');
-  tbody.innerHTML = '<tr><td colspan="6" class="px-6 py-8 text-center text-slate-400">Cargando transacciones...</td></tr>';
-
+// Load All Data & Update Dashboard KPIs
+async function loadAllData() {
   try {
     const res = await fetch('/api/v1/receipts?limit=100');
-    if (!res.ok) throw new Error('Error al consultar historial');
+    if (!res.ok) throw new Error('Error al consultar recibos');
     allTransactions = await res.json();
 
-    renderTransactions(allTransactions);
+    // 1. Update KPIs
+    updateKPIs(allTransactions);
+
+    // 2. Render Recent Dashboard Table
+    renderDashboardRecent(allTransactions.slice(0, 5));
+
+    // 3. Render Ingresos Table
+    renderIngresosTable(allTransactions);
+
+    // 4. Update Badge Count
+    const badge = document.getElementById('badge-ingresos-count');
+    if (badge) badge.textContent = allTransactions.length;
+
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="6" class="px-6 py-8 text-center text-red-400">Error al cargar historial: ${err.message}</td></tr>`;
+    console.error('Error fetching data:', err);
   }
 }
 
-function renderTransactions(list) {
-  const tbody = document.getElementById('transactions-tbody');
-  const emptyState = document.getElementById('table-empty');
+// Calculate and populate Forttu-style KPIs
+function updateKPIs(transactions) {
+  let verifiedSum = 0;
+  let verifiedCount = 0;
+  let simulatedSum = 0;
+  let simulatedCount = 0;
+
+  transactions.forEach(tx => {
+    const amt = tx.extracted_amount || 0;
+    if (tx.verification_status === 'VERIFIED') {
+      verifiedSum += amt;
+      verifiedCount++;
+    } else if (tx.verification_status === 'SIMULATED') {
+      simulatedSum += amt;
+      simulatedCount++;
+    }
+  });
+
+  const totalSum = verifiedSum;
+  const avgTicket = verifiedCount > 0 ? Math.round(verifiedSum / verifiedCount) : 0;
+
+  document.getElementById('stat-total-cop').textContent = formatCOP(totalSum);
+  document.getElementById('stat-total-count').textContent = `${verifiedCount} comprobantes verificados`;
+
+  document.getElementById('stat-avg-ticket').textContent = formatCOP(avgTicket);
+
+  document.getElementById('stat-verified-count').textContent = verifiedCount;
+  document.getElementById('stat-verified-sum').textContent = `${formatCOP(verifiedSum)} conciliados`;
+
+  document.getElementById('stat-simulated-count').textContent = simulatedCount;
+  document.getElementById('stat-simulated-sum').textContent = `${formatCOP(simulatedSum)} en auditoría`;
+}
+
+// Render Recent table on Dashboard
+function renderDashboardRecent(list) {
+  const tbody = document.getElementById('dashboard-recent-tbody');
+  tbody.innerHTML = '';
+
+  if (!list || list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="px-5 py-6 text-center text-slate-400">Sin movimientos recientes</td></tr>';
+    return;
+  }
+
+  list.forEach(tx => {
+    const tr = document.createElement('tr');
+    tr.className = "hover:bg-slate-50 transition";
+
+    const dateStr = new Date(tx.created_at).toLocaleString('es-CO', {
+      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+    });
+
+    const statusBadge = getStatusBadge(tx.verification_status);
+    const bankBadge = getBankBadge(tx.bank_platform);
+
+    tr.innerHTML = `
+      <td class="px-5 py-3 font-mono text-slate-500">${dateStr}</td>
+      <td class="px-5 py-3">${bankBadge}</td>
+      <td class="px-5 py-3 font-mono font-bold text-slate-800">${tx.reference_number || 'N/A'}</td>
+      <td class="px-5 py-3 font-bold text-slate-900">${formatCOP(tx.extracted_amount)}</td>
+      <td class="px-5 py-3">${statusBadge}</td>
+      <td class="px-5 py-3 text-right">
+        <button onclick="openDetailModal('${tx.id}', '${tx.image_sha256}', '${tx.failure_reason || ''}')" class="text-blue-600 hover:text-blue-800 font-semibold text-[11px]">
+          Detalle
+        </button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+  lucide.createIcons();
+}
+
+// Render Full Ingresos Table
+function renderIngresosTable(list) {
+  const tbody = document.getElementById('ingresos-tbody');
+  const emptyState = document.getElementById('ingresos-empty');
   tbody.innerHTML = '';
 
   if (!list || list.length === 0) {
@@ -362,48 +455,26 @@ function renderTransactions(list) {
 
   list.forEach(tx => {
     const tr = document.createElement('tr');
-    tr.className = "hover:bg-slate-800/40 transition";
+    tr.className = "hover:bg-slate-50 transition";
 
     const dateStr = new Date(tx.created_at).toLocaleString('es-CO', {
       day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
     });
 
-    // Bank Badge styling
-    let bankBadge = `<span class="px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-800 text-slate-300">${tx.bank_platform}</span>`;
-    if (tx.bank_platform === 'NEQUI') {
-      bankBadge = `<span class="px-2.5 py-1 rounded-md text-xs font-semibold bg-fuchsia-950 text-fuchsia-300 border border-fuchsia-800">Nequi</span>`;
-    } else if (tx.bank_platform === 'DAVIPLATA') {
-      bankBadge = `<span class="px-2.5 py-1 rounded-md text-xs font-semibold bg-red-950 text-red-300 border border-red-800">DaviPlata</span>`;
-    } else if (tx.bank_platform === 'BANCOLOMBIA') {
-      bankBadge = `<span class="px-2.5 py-1 rounded-md text-xs font-semibold bg-yellow-950 text-yellow-300 border border-yellow-800">Bancolombia</span>`;
-    } else if (tx.bank_platform === 'BRE_B') {
-      bankBadge = `<span class="px-2.5 py-1 rounded-md text-xs font-semibold bg-teal-950 text-teal-300 border border-teal-800">Bre-B</span>`;
-    } else if (tx.bank_platform === 'DIAN_INVOICE') {
-      bankBadge = `<span class="px-2.5 py-1 rounded-md text-xs font-semibold bg-blue-950 text-blue-300 border border-blue-800">DIAN QR</span>`;
-    }
+    const bankBadge = getBankBadge(tx.bank_platform);
+    const statusBadge = getStatusBadge(tx.verification_status);
 
-    // Status Badge
-    let statusBadge = `<span class="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-400">${tx.verification_status}</span>`;
-    if (tx.verification_status === 'VERIFIED') {
-      statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><i data-lucide="check" class="w-3 h-3 mr-1"></i> Verificado</span>`;
-    } else if (tx.verification_status === 'SIMULATED') {
-      statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"><i data-lucide="flask-conical" class="w-3 h-3 mr-1"></i> Simulado</span>`;
-    } else if (tx.verification_status === 'UNCONFIRMED') {
-      statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-500/10 text-slate-400 border border-slate-500/20"><i data-lucide="clock" class="w-3 h-3 mr-1"></i> Sin Confirmar</span>`;
-    } else if (tx.verification_status === 'REJECTED') {
-      statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-500/10 text-red-400 border border-red-500/20"><i data-lucide="x" class="w-3 h-3 mr-1"></i> Rechazado</span>`;
-    } else if (tx.verification_status === 'DUPLICATE') {
-      statusBadge = `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20"><i data-lucide="copy" class="w-3 h-3 mr-1"></i> Duplicado</span>`;
-    }
+    const desc = tx.failure_reason || (tx.order_id ? `Orden: ${tx.order_id.slice(0, 8)}...` : 'Inspección de mostrador');
 
     tr.innerHTML = `
-      <td class="px-6 py-4 font-mono text-xs text-slate-400 whitespace-nowrap">${dateStr}</td>
-      <td class="px-6 py-4">${bankBadge}</td>
-      <td class="px-6 py-4 font-mono font-bold text-white">${tx.reference_number || 'N/A'}</td>
-      <td class="px-6 py-4 font-bold text-slate-200">${formatCOP(tx.extracted_amount)}</td>
-      <td class="px-6 py-4">${statusBadge}</td>
-      <td class="px-6 py-4 text-right">
-        <button onclick="openDetailModal('${tx.id}', '${tx.image_sha256}', '${tx.failure_reason || ''}')" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition">
+      <td class="px-5 py-3.5 font-mono text-slate-500 whitespace-nowrap">${dateStr}</td>
+      <td class="px-5 py-3.5">${bankBadge}</td>
+      <td class="px-5 py-3.5 font-mono font-bold text-slate-800">${tx.reference_number || 'N/A'}</td>
+      <td class="px-5 py-3.5 font-bold text-slate-900">${formatCOP(tx.extracted_amount)}</td>
+      <td class="px-5 py-3.5">${statusBadge}</td>
+      <td class="px-5 py-3.5 text-slate-500 truncate max-w-[200px]" title="${desc}">${desc}</td>
+      <td class="px-5 py-3.5 text-right">
+        <button onclick="openDetailModal('${tx.id}', '${tx.image_sha256}', '${tx.failure_reason || ''}')" class="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] transition">
           Forense
         </button>
       </td>
@@ -413,38 +484,65 @@ function renderTransactions(list) {
   lucide.createIcons();
 }
 
-// Table Filters & Search
-function setFilter(status) {
-  currentFilter = status;
-  ['ALL', 'VERIFIED', 'SIMULATED', 'REJECTED'].forEach(s => {
-    const btn = document.getElementById(`filter-${s}`);
-    if (!btn) return;
-    if (s === status) {
-      btn.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 text-slate-950 transition";
-    } else {
-      btn.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-400 hover:text-white transition";
-    }
-  });
-  filterTransactions();
+// Helpers for badges
+function getBankBadge(bank) {
+  if (bank === 'NEQUI') {
+    return `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-fuchsia-100 text-fuchsia-800 border border-fuchsia-200">Nequi</span>`;
+  } else if (bank === 'DAVIPLATA') {
+    return `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-red-100 text-red-800 border border-red-200">DaviPlata</span>`;
+  } else if (bank === 'BANCOLOMBIA') {
+    return `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">Bancolombia</span>`;
+  } else if (bank === 'BRE_B') {
+    return `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-teal-100 text-teal-800 border border-teal-200">Bre-B</span>`;
+  } else if (bank === 'DIAN_INVOICE') {
+    return `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-200">DIAN QR</span>`;
+  }
+  return `<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-600">${bank || 'OTRO'}</span>`;
 }
 
-function filterTransactions() {
-  const query = document.getElementById('table-search').value.toLowerCase().trim();
+function getStatusBadge(status) {
+  if (status === 'VERIFIED') {
+    return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200"><i data-lucide="check" class="w-3 h-3 mr-1"></i> Conciliado</span>`;
+  } else if (status === 'SIMULATED') {
+    return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200"><i data-lucide="flask-conical" class="w-3 h-3 mr-1"></i> Simulado</span>`;
+  } else if (status === 'DUPLICATE') {
+    return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200"><i data-lucide="copy" class="w-3 h-3 mr-1"></i> Duplicado</span>`;
+  } else if (status === 'REJECTED') {
+    return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-red-50 text-red-700 border border-red-200"><i data-lucide="x" class="w-3 h-3 mr-1"></i> Rechazado</span>`;
+  }
+  return `<span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-500">${status}</span>`;
+}
+
+// Filter Ingresos Table
+function setIngresosFilter(status) {
+  currentFilter = status;
+  ['ALL', 'VERIFIED', 'SIMULATED', 'REJECTED'].forEach(s => {
+    const btn = document.getElementById(`filter-ing-${s}`);
+    if (!btn) return;
+    if (s === status) {
+      btn.className = "px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white transition";
+    } else {
+      btn.className = "px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100 transition";
+    }
+  });
+  filterIngresos();
+}
+
+function filterIngresos() {
+  const query = (document.getElementById('ingresos-search').value || '').toLowerCase().trim();
   const filtered = allTransactions.filter(tx => {
-    // Status Filter
     if (currentFilter !== 'ALL' && tx.verification_status !== currentFilter) {
       return false;
     }
-    // Search Query
     if (query) {
       const matchRef = (tx.reference_number || '').toLowerCase().includes(query);
       const matchBank = (tx.bank_platform || '').toLowerCase().includes(query);
-      const matchId = (tx.id || '').toLowerCase().includes(query);
-      return matchRef || matchBank || matchId;
+      const matchAmt = (tx.extracted_amount || '').toString().includes(query);
+      return matchRef || matchBank || matchAmt;
     }
     return true;
   });
-  renderTransactions(filtered);
+  renderIngresosTable(filtered);
 }
 
 // Forensic Modal
@@ -468,6 +566,7 @@ function closeDetailModal() {
 
 // Initialize on page load
 window.addEventListener('DOMContentLoaded', () => {
-  setVerifyMode('simulate');
+  switchTab('dashboard');
+  loadAllData();
   lucide.createIcons();
 });
